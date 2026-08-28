@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+  labels:
+    app: app
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3   # keep at most 3 old ReplicaSets so quick iteration doesn't pile up history
+  selector:
+    matchLabels:
+      app: app
+  template:
+    metadata:
+      labels:
+        app: app
+        # `env` distinguishes prod pods from preview pods in the same namespace.
+        # Base value is `prod`. Preview AppSet patches this to `pr-<N>` so the
+        # preview Service selector (also patched) only routes to preview pods.
+        env: prod
+    spec:
+      containers:
+        - name: app
+          image: ghcr.io/PLACEHOLDER_CUSTOMERORG_LOWER/PLACEHOLDER_APP:PLACEHOLDER_TAG
+          ports:
+            - containerPort: 3000
+          # All app env vars come from the k8s Secret that ExternalSecrets
+          # keeps in sync with Key Vault. See §5.7 of the design doc.
+          envFrom:
+            - secretRef:
+                name: app-secret
+                optional: true    # pod boots before any /set-secret call; ExternalSecrets fills this on first sync
+          resources:
+            requests:
+              memory: 128Mi
+              cpu: 100m
+            limits:
+              memory: 256Mi
+          readinessProbe:
+            httpGet: { path: /api/health, port: 3000 }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /api/health, port: 3000 }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          # Generous startupProbe — preview pods may run migrations at boot
+          # (Prisma), which delays first health. 60s failure threshold @ 1s = 60s slack.
+          startupProbe:
+            httpGet: { path: /api/health, port: 3000 }
+            failureThreshold: 60
+            periodSeconds: 1
+      imagePullSecrets:
+        - name: ghcr-pull   # From customer-bootstrap

@@ -1,0 +1,28 @@
+# Host is patched per environment:
+#   - manifests/prod/kustomization.yaml sets it to `PLACEHOLDER_APP.PLACEHOLDER_CUSTOMER_DOMAIN`
+#   - The ArgoCD PullRequest generator sets it to `<branch-slug>-PLACEHOLDER_APP.PLACEHOLDER_CUSTOMER_DOMAIN`
+# cert-manager sees the annotation + tls block and issues a per-host cert via
+# HTTP01 (~30-90s on first hit of a new URL). No wildcard cert needed.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: letsencrypt-production
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [PLACEHOLDER_HOST]
+      secretName: app-tls
+  rules:
+    - host: PLACEHOLDER_HOST
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: app
+                port:
+                  number: 80

@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build artifacts
+dist/
+build/
+.next/
+generated/
+*.tsbuildinfo
+next-env.d.ts
+
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Local pnpm store
+.pnpm-store/
+
+# Logs
+npm-debug.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store

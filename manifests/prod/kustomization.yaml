@@ -1,0 +1,45 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../base
+# Every app from this template names its resources `app` (Deployment, Service,
+# Ingress, ExternalSecret). All prod apps for a customer land in ONE namespace,
+# so without a per-app prefix + selector label the apps overwrite each other's
+# resources and ArgoCD flaps between them. The prefix makes names unique
+# (PLACEHOLDER_APP-app, PLACEHOLDER_APP-app-secret, PLACEHOLDER_APP-app-tls);
+# the label (applied to selectors too) makes each Service pick only its own pods.
+# The Ingress patch below still targets `name: app` — kustomize matches on the
+# pre-prefix name.
+namePrefix: PLACEHOLDER_APP-
+labels:
+  - includeSelectors: true
+    pairs:
+      logisk.app: PLACEHOLDER_APP
+images:
+  - name: ghcr.io/PLACEHOLDER_CUSTOMERORG_LOWER/PLACEHOLDER_APP
+    newTag: main-c542ac6
+patches:
+  - target:
+      kind: Ingress
+      name: app
+    patch: |-
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: PLACEHOLDER_APP.PLACEHOLDER_CUSTOMER_DOMAIN
+      - op: replace
+        path: /spec/rules/0/host
+        value: PLACEHOLDER_APP.PLACEHOLDER_CUSTOMER_DOMAIN
+      # cert-manager writes the cert here; must be per-app or apps overwrite each other's TLS.
+      - op: replace
+        path: /spec/tls/0/secretName
+        value: PLACEHOLDER_APP-app-tls
+  # The ExternalSecret is renamed by namePrefix (so its target Secret becomes
+  # PLACEHOLDER_APP-app-secret), but kustomize doesn't rewrite envFrom for a Secret
+  # it can't see in the build — point the pod at the prefixed name explicitly.
+  - target:
+      kind: Deployment
+      name: app
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/envFrom/0/secretRef/name
+        value: PLACEHOLDER_APP-app-secret

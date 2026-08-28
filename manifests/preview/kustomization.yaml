@@ -1,0 +1,47 @@
+# Preview overlay. The ArgoCD PullRequest generator wraps this with:
+#   - namePrefix: pr-<N>-      (renames every resource including app-secret;
+#                              kustomize auto-rewrites envFrom and imagePullSecrets)
+#   - patches on the Ingress   (sets host to <branch-slug>-PLACEHOLDER_APP.<customer-domain>)
+# See the customer-<c>-preview-appset ApplicationSet in lb-argocd-iac.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../base
+images:
+  - name: ghcr.io/PLACEHOLDER_CUSTOMERORG_LOWER/PLACEHOLDER_APP
+    newTag: PLACEHOLDER_TAG   # bumped by update-preview-manifest.yaml on PR events
+
+# Fully-separated envs. Base has dataFrom for shared-prod-* + PLACEHOLDER_APP-prod-*
+# (the prod set); this JSON patch swaps in the preview set so preview pods only
+# see shared-preview-* + PLACEHOLDER_APP-preview-*. No inheritance from prod.
+patches:
+  - target:
+      kind: ExternalSecret
+      name: app-secret
+    patch: |-
+      - op: replace
+        path: /spec/dataFrom
+        value:
+          - find:
+              name:
+                regexp: "^shared-preview-.*"
+            rewrite:
+              - regexp:
+                  source: "^shared-preview-(.+)$"
+                  target: "$1"
+              - regexp:
+                  source: "-"
+                  target: "_"
+          - find:
+              name:
+                regexp: "^PLACEHOLDER_APP-preview-.*"
+            rewrite:
+              - regexp:
+                  source: "^PLACEHOLDER_APP-preview-(.+)$"
+                  target: "$1"
+              - regexp:
+                  source: "-"
+                  target: "_"
+
+# Ingress host + TLS renaming for previews is handled by the ApplicationSet
+# (see design doc §4.2 and §7 in `../base/ingress.yaml`).

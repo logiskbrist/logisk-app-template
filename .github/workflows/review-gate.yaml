@@ -1,0 +1,24 @@
+# Logisk Brist review gate. On ordinary apps this is a no-op that reports
+# success immediately — it only does anything when the app is marked critical
+# (repo topic `logisk-critical`, or the org property `criticality=critical`).
+#
+# On a critical app it inspects the diff for sensitive changes — authentication,
+# database schema/migrations, anything money-handling, platform glue (workflows,
+# manifests, Dockerfile), and secrets or outbound network egress — and when it
+# finds one it requires an approving review from @PLACEHOLDER_CUSTOMERORG/logiskbrist-reviewers
+# before the PR can merge.
+#
+# The pull_request_review trigger is why approval alone unblocks the PR: the gate
+# re-runs when a review is submitted, so a reviewer approving is enough — nobody
+# has to push an empty commit to re-trigger the check.
+name: review-gate
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_review:
+    types: [submitted, dismissed]
+
+jobs:
+  lb-review-gate:
+    uses: logiskbrist/logisk-platform-workflows/.github/workflows/lb-review-gate.yaml@v3
+    secrets: inherit

@@ -1,0 +1,15 @@
+name: preview-cleanup
+# Fires when a preview PR closes (merged or discarded).
+# Drops the per-PR Postgres database the app created on its first boot.
+# ArgoCD prunes the k8s resources on its own (via the PullRequest generator);
+# this workflow only handles the Postgres side.
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  drop-preview-db:
+    uses: logiskbrist/logisk-platform-workflows/.github/workflows/drop-preview-db.yaml@v3
+    with:
+      pr_number: ${{ github.event.number }}

@@ -1,0 +1,27 @@
+# PR quality gate. Both jobs run against the PR *head* commit — including the
+# manifest-bump commit that the platform pushes onto the branch after the image
+# is built, which is what makes verify-preview able to see the freshly deployed
+# tag. These are the repo's required status checks: the agent's `/publish` skill
+# waits for them to go green before merging, so a red check blocks the release
+# rather than the customer noticing in prod.
+#
+# ai-review reads the diff and comments on the PR. It skips itself gracefully
+# when the org has no ANTHROPIC_API_KEY secret — no key, no failure.
+name: checks
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  ai-review:
+    uses: logiskbrist/logisk-platform-workflows/.github/workflows/ai-review.yaml@v3
+    secrets: inherit
+
+  # Resolves the preview URL from the branch + repo name, then polls
+  # /api/health until it reports the tag in manifests/preview/kustomization.yaml
+  # — i.e. until the preview is actually serving this PR's code — and runs the
+  # app's tests against it.
+  verify-preview:
+    uses: logiskbrist/logisk-platform-workflows/.github/workflows/verify-preview.yaml@v3
+    with:
+      domain: PLACEHOLDER_CUSTOMER_DOMAIN

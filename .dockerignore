@@ -1,0 +1,53 @@
+# Never copy host node_modules — pnpm install runs inside the image with the
+# correct Linux binaries (Prisma's engine, esbuild, sharp, etc. are platform-
+# specific and copying macOS/Windows binaries in breaks the runtime).
+node_modules
+
+# Build outputs — the image builds its own via `pnpm build`.
+dist
+build
+coverage
+.next
+
+# Git metadata (large; not needed at runtime).
+.git
+.gitignore
+.gitattributes
+
+# CI / platform manifests — not part of the runtime image.
+.github
+manifests
+
+# Tests. They run in CI (unit) and against the preview URL (verify/), never
+# inside the image.
+test
+verify
+vitest.config.ts
+
+# Local agent tooling.
+.claude
+.cursor
+.vscode
+.idea
+
+# Docs. The image doesn't serve them.
+README.md
+CLAUDE.md
+AGENTS.md
+*.md
+
+# Never bake secrets or dev-only env into images.
+.env
+.env.*
+
+# OS + editor junk.
+.DS_Store
+Thumbs.db
+*.log
+*.swp
+
+# Docker itself.
+Dockerfile
+.dockerignore
+docker-compose.yml
+docker-compose.*.yml

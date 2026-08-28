@@ -1,0 +1,53 @@
+name: build
+on:
+  push:
+    paths-ignore:
+      - 'manifests/**'      # manifest bumps land with [skip ci]; don't rebuild on our own commits
+      - '**/*.md'
+
+jobs:
+  build:
+    uses: logiskbrist/logisk-platform-workflows/.github/workflows/build-and-push.yaml@v3
+
+  # Runs on every non-main push. Idempotent: if a PR for this branch already
+  # exists, the workflow no-ops. Must run BEFORE bump-preview so that
+  # ArgoCD's PullRequest generator has a PR to key the preview Application on
+  # by the time the image tag lands in the manifest.
+  open-draft-pr:
+    if: github.ref != 'refs/heads/main'
+    uses: logiskbrist/logisk-platform-workflows/.github/workflows/open-draft-pr.yaml@v3
+    secrets: inherit
+
+  bump-prod:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    uses: logiskbrist/logisk-platform-workflows/.github/workflows/update-prod-manifest.yaml@v3
+    with:
+      image_tag: ${{ needs.build.outputs.tag }}
+
+  # Waits until https://<app>.PLACEHOLDER_CUSTOMER_DOMAIN/api/health reports the tag
+  # we just shipped. If it never does, verify-prod pushes a manifest bump back to
+  # the previous tag (auto-rollback) and opens an issue — «Publisering rullet
+  # tilbake: <app>» — so prod is never left broken and unattended.
+  verify-prod:
+    # `build` is in needs purely so `needs.build.outputs.tag` is in scope for the
+    # expect_tag fallback below; bump-prod already depends on build, so this adds
+    # no ordering.
+    needs: [build, bump-prod]
+    if: github.ref == 'refs/heads/main'
+    uses: logiskbrist/logisk-platform-workflows/.github/workflows/verify-prod.yaml@v3
+    secrets: inherit
+    with:
+      domain: PLACEHOLDER_CUSTOMER_DOMAIN
+      expect_tag: ${{ needs.bump-prod.outputs.image_tag || needs.build.outputs.tag }}
+      previous_tag: ${{ needs.bump-prod.outputs.previous_tag }}
+
+  # Sequenced after open-draft-pr so the PR is guaranteed to exist by the
+  # time the preview manifest is bumped — otherwise the PullRequest generator
+  # wouldn't see a PR to create the preview Application against.
+  bump-preview:
+    needs: [build, open-draft-pr]
+    if: github.ref != 'refs/heads/main'
+    uses: logiskbrist/logisk-platform-workflows/.github/workflows/update-preview-manifest.yaml@v3
+    with:
+      image_tag: ${{ needs.build.outputs.tag }}
