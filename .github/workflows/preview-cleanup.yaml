@@ -8,6 +8,10 @@ on:
   pull_request:
     types: [closed]
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   drop-preview-db:
     uses: logiskbrist/logisk-platform-workflows/.github/workflows/drop-preview-db.yaml@v3
