@@ -17,7 +17,7 @@ labels:
       logisk.app: PLACEHOLDER_APP
 images:
   - name: ghcr.io/PLACEHOLDER_CUSTOMERORG_LOWER/PLACEHOLDER_APP
-    newTag: main-47a72a1
+    newTag: main-df6641e
 patches:
   - target:
       kind: Ingress
