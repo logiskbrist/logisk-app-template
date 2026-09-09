@@ -123,9 +123,15 @@ Reload on secret change is *not* automatic — either install [Reloader](https:/
 
 ## Previews
 
-Every non-main branch gets a preview at `<branch-slug>-<app>.<customer-domain>`. Just push the branch — the `open-draft-pr` workflow opens a draft PR, the ArgoCD PullRequest generator sees it, and a preview Application appears within ~60 seconds.
+Push a non-main branch, then add the `preview` label to the auto-drafted PR — that's the opt-in. Once the label is on, the ArgoCD PullRequest generator picks it up and a preview Application appears at `<branch-slug>-<app>.<customer-domain>` within ~60 seconds.
 
-Preview cleanup: closing or merging the PR removes the preview immediately. Idle PRs are auto-closed after 7 days (see `stale-preview-reaper` in the platform-workflows repo).
+```bash
+git push -u origin feature/whatever
+# Wait a few seconds for open-draft-pr to fire, then:
+gh pr edit --add-label preview
+```
+
+Preview cleanup: closing/merging the PR **or** removing the `preview` label tears the preview Application down immediately. The nightly `preview-label-reaper` CronJob (in the `argocd` namespace on the cluster) strips the label from PRs whose `updated_at` hasn't moved in 7 days — PR stays open, preview goes away, add the label back to restore.
 
 ## Adding a database
 
