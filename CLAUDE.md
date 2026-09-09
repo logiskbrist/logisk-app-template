@@ -4,7 +4,7 @@ You are helping a developer on an app deployed to Logiskbrist's managed platform
 
 ## The one paragraph
 
-The customer pushes code, you help write it, and the platform deploys it. Every commit to `main` becomes production. Every push to any other branch becomes a preview environment with its own URL. Secrets live in Azure Key Vault and reach the app as env vars — never write them to git. Databases (if present) are provisioned and migrated by the app itself via Prisma; the platform provides one Postgres server, the app manages the databases on it. You don't run `kubectl`, you don't manage YAML, you don't touch Terraform. You edit code, push code, and — when needed — invoke six well-defined slash commands.
+The customer pushes code, you help write it, and the platform deploys it. Every commit to `main` becomes production. Every push to any other branch opens a draft PR; adding the `preview` label to that PR spins up a preview environment with its own URL. Secrets live in Azure Key Vault and reach the app as env vars — never write them to git. Databases (if present) are provisioned and migrated by the app itself via Prisma; the platform provides one Postgres server, the app manages the databases on it. You don't run `kubectl`, you don't manage YAML, you don't touch Terraform. You edit code, push code, add the `preview` label when the user wants a testable URL, and — when needed — invoke six well-defined slash commands.
 
 ## Do not ask permission for derivable choices
 
@@ -147,11 +147,12 @@ The `*-` wildcard is what covers per-branch preview hostnames. This is universal
 |---|---|
 | Push to `main` | GitHub Actions builds image → pushes to GHCR → bumps `manifests/prod/kustomization.yaml` → ArgoCD syncs to prod namespace. Live at `https://<app>.<customer-domain>/`. |
 | …then, still on `main` | `verify-prod` polls `https://<app>.<customer-domain>/api/health` until it reports the tag just shipped. **If it never does, prod is automatically rolled back to the previous tag and an issue is opened: «Publisering rullet tilbake: `<app>`».** A failed deploy does not stay live. |
-| Push to any non-main branch | Draft PR opens automatically → build/push image → bumps `manifests/preview/kustomization.yaml` → ArgoCD creates a preview Application. Live at `https://<branch-slug>-<app>.<customer-domain>/`. |
-| PR opened / updated | `checks.yaml` runs two required checks: **`ai-review`** reads the diff and comments findings on the PR (skipped when the org has no `ANTHROPIC_API_KEY`), and **`verify-preview`** waits for the preview to actually serve this PR's tag, then runs `pnpm test` against it. |
+| Push to any non-main branch | Draft PR opens automatically → build/push image → bumps `manifests/preview/kustomization.yaml`. A preview Application is created **only after** the PR receives the `preview` label — `gh pr edit --add-label preview` opts in. Live at `https://<branch-slug>-<app>.<customer-domain>/` within ~60 s of labeling. |
+| PR opened / updated | `checks.yaml` runs two required checks: **`ai-review`** reads the diff and comments findings on the PR (skipped when the org has no `ANTHROPIC_API_KEY`), and **`verify-preview`** waits for the preview to actually serve this PR's tag, then runs `pnpm test` against it. `verify-preview` is a neutral pass on unlabeled PRs (nothing to verify). |
 | PR opened / updated, **critical apps only** | `review-gate.yaml` checks the diff for sensitive changes and, if it finds one, blocks the merge until `@godtbrod/logiskbrist-reviewers` approves. Non-critical apps: no-op. Re-runs on review submission, so an approval unblocks without a new push. |
 | Close/merge a PR | Preview Application and its DB (if any) are removed within ~1 minute. |
-| Idle 7 days | The stale-preview reaper closes the PR, which triggers teardown. Reopen the PR to restore. |
+| `preview` label removed (manually or by the reaper) | Preview Application and its K8s resources are pruned within ~60 s. PR stays open; DB (if any) persists until the PR is actually closed. |
+| Idle 7 days | The nightly `preview-label-reaper` CronJob (in the `argocd` namespace) strips the `preview` label from PRs whose `updated_at` hasn't moved in 7 days. Add the label back to restore the preview. |
 
 ## Your slash commands
 
@@ -162,7 +163,7 @@ Six skills defined in `.claude/skills/`. Prefer these over ad-hoc shell commands
 | `/set-secret` | Add or update an env var (goes to Key Vault, appears on the pod) |
 | `/delete-secret` | Remove one |
 | `/list-secrets` | Show what's currently set for this app |
-| `/open-preview` | Guide for opening a preview (usually just: push the branch) |
+| `/open-preview` | Guide for opening a preview (push the branch, then add the `preview` label to the auto-opened PR) |
 | `/check-deploy` | Where's the current deploy? Actions + ArgoCD status |
 | `/rollback` | Roll production back to a previous image tag |
 
@@ -172,8 +173,8 @@ Read the `SKILL.md` in each folder before invoking — they contain the exact co
 
 ### How a change goes live
 
-1. **Branch.** Never commit to `main` and never push to `main` directly. Work on a branch — that's what produces a preview and a PR to review.
-2. **Preview.** Pushing the branch opens a draft PR and deploys a preview at `https://<branch-slug>-<app>.<customer-domain>/`.
+1. **Branch.** Never commit to `main` and never push to `main` directly. Work on a branch — that's what produces a PR to review.
+2. **Preview.** Pushing the branch opens a draft PR. Add the `preview` label (`gh pr edit --add-label preview`) to opt into a deploy at `https://<branch-slug>-<app>.<customer-domain>/`. Add the label as soon as you want the user to be able to click a URL — that's usually straight after the first successful push.
 3. **Checks.** `ai-review` comments on the diff; `verify-preview` waits until the preview serves this exact image tag and then runs `pnpm test` against it. On critical apps, `review-gate` may also require a Logisk Brist approval. These are the required status checks.
 4. **Merge.** Only once the checks are green.
 5. **Prod verify.** The merge builds, deploys, and then `verify-prod` confirms prod is serving the new tag. If it isn't, the platform rolls prod back to the previous tag by itself and opens an issue «Publisering rullet tilbake: `<app>`».
@@ -187,7 +188,7 @@ Every preview is shareable — a colleague can open the URL and see the work wit
 - **Tell the user, in their words:** «Jeg lager en egen testversjon for dette: *eksport til Excel*. Adressen kommer om noen minutter — den kan du sende til kolleger.» When it's live, give the URL once.
 - **Switching** («jobb videre på svinnrapporten»): commit or stash what's open, check out that branch, say which testversjon you're now in.
 - **Several at once is normal.** «Hva jobber vi på?» → open PRs as a list: name, URL, status (*under arbeid* / *klar til publisering* / *venter på godkjenning fra Logisk Brist*).
-- **After a publish**, other open branches keep going; rebase/merge `main` into them quietly if they need it. Previews idle for 7 days are closed by the platform — warn the user the day before, reopen on request.
+- **After a publish**, other open branches keep going; rebase/merge `main` into them quietly if they need it. The nightly `preview-label-reaper` strips the `preview` label from PRs untouched for 7 days — the PR stays open, the preview goes away. Add the label back to bring it back; warn the user the day before if they're likely to want the preview kept live.
 
 **When the user says «publiser» (or "ship it", "legg det ut"), use the org-level `/publish` skill.** It drives this flow end to end — pushes the branch, waits for the checks, merges, and watches the prod verification. Don't improvise it with ad-hoc `git push` / `gh pr merge` calls, and never push to `main` to skip the checks.
 
